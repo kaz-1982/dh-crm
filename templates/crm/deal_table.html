@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% load crm_extras %}
+{% block title %}商談一覧 | 社内CRM{% endblock %}
+{% block heading %}商談一覧{% endblock %}
+
+{% block toolbar %}
+  <a class="btn btn-sm" href="{% url 'crm:deal_board' %}">🗂 ボード表示</a>
+  <button class="btn btn-sm btn-primary" hx-get="{% url 'crm:deal_create' %}" hx-target="#modal-body">＋ 新規商談</button>
+{% endblock %}
+
+{% block content %}
+<div class="stack">
+  <form id="filters" class="card card-body row"
+        hx-get="{% url 'crm:deal_table' %}"
+        hx-trigger="change, keyup changed delay:350ms, submit"
+        hx-target="#results" hx-swap="outerHTML" hx-push-url="true">
+    <input type="search" name="q" value="{{ q }}" class="input" style="flex:1; min-width:200px;"
+           placeholder="案件名・取引先で検索…" autocomplete="off">
+    <select name="stage" class="input" style="width:auto;">
+      <option value="">全ステージ</option>
+      {% for value, label in stages %}
+        <option value="{{ value }}" {% if request.GET.stage == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <label class="row small" style="gap:5px;">
+      <input type="checkbox" name="open_only" value="1" class="checkbox" {% if request.GET.open_only %}checked{% endif %}> 進行中のみ
+    </label>
+    <span class="htmx-indicator spinner"></span>
+  </form>
+
+  {% partialdef results inline %}
+  <div id="results" class="card dimmable"
+       hx-get="{% url 'crm:deal_table' %}{% querystring %}"
+       hx-trigger="dealListChanged from:body"
+       hx-target="this" hx-swap="outerHTML">
+    <div class="card-head">
+      <span class="small muted">{{ total_count }} 件</span>
+      <span class="spacer"></span>
+      <span class="small">合計 <strong>{{ total_amount|yen }}</strong></span>
+    </div>
+    {% if page_obj.object_list %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr>
+        <th>案件名</th><th>取引先</th><th>ステージ</th>
+        <th class="right">金額</th><th class="right">確度</th>
+        <th>受注予定</th><th>営業担当</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for deal in page_obj %}
+        <tr id="deal-row-{{ deal.pk }}">
+          <td><a href="{{ deal.get_absolute_url }}"><strong>{{ deal.title }}</strong></a></td>
+          <td class="small"><a href="{{ deal.company.get_absolute_url }}">{{ deal.company.name }}</a></td>
+          <td><span class="badge {% if deal.stage == 'won' %}won{% elif deal.stage == 'lost' %}lost{% else %}info{% endif %}">{{ deal.get_stage_display }}</span></td>
+          <td class="right mono">{{ deal.amount|yen }}</td>
+          <td class="right mono">{{ deal.probability }}%</td>
+          <td class="small {% if deal.is_overdue %}badge c{% endif %}">{{ deal.expected_close_date|date:"Y/n/j"|default:"—" }}</td>
+          <td class="small">{{ deal.owner|default:"—" }}</td>
+          <td><div class="row-actions">
+            <button class="btn btn-sm btn-ghost" hx-get="{% url 'crm:deal_update' deal.pk %}" hx-target="#modal-body">✏️</button>
+            <button class="btn btn-sm btn-ghost"
+                    hx-delete="{% url 'crm:deal_delete' deal.pk %}"
+                    hx-target="#deal-row-{{ deal.pk }}" hx-swap="outerHTML swap:300ms"
+                    hx-confirm="商談「{{ deal.title }}」を削除しますか？">🗑</button>
+          </div></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div class="pager">
+      {% if page_obj.has_previous %}
+        <button class="btn btn-sm" hx-get="{% url 'crm:deal_table' %}{% querystring page=page_obj.previous_page_number %}"
+                hx-target="#results" hx-swap="outerHTML" hx-push-url="true">← 前へ</button>
+      {% endif %}
+      <span class="spacer"></span><span class="small muted">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span><span class="spacer"></span>
+      {% if page_obj.has_next %}
+        <button class="btn btn-sm" hx-get="{% url 'crm:deal_table' %}{% querystring page=page_obj.next_page_number %}"
+                hx-target="#results" hx-swap="outerHTML" hx-push-url="true">次へ →</button>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+      <div class="empty"><span class="icon">🗂</span>商談がありません。</div>
+    {% endif %}
+  </div>
+  {% endpartialdef %}
+</div>
+{% endblock %}

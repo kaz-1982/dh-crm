@@ -1,0 +1,24 @@
+{% comment %}
+タスク 1 行。ダッシュボードとタスク一覧の両方から include する。
+htmx で差し替える単位＝再利用するテンプレートの単位、と揃えておくと破綻しない。
+{% endcomment %}
+<div class="row task-row" id="task-row-{{ task.pk }}" style="padding:7px 0; border-bottom:1px solid var(--border);">
+  {# チェックした瞬間に POST。フォームも送信ボタンも要らない #}
+  <input type="checkbox" class="checkbox" {% if task.is_done %}checked{% endif %}
+         hx-post="{% url 'crm:task_toggle' task.pk %}"
+         hx-target="#task-row-{{ task.pk }}"
+         hx-swap="outerHTML">
+  <span {% if task.is_done %}style="text-decoration:line-through; opacity:.55"{% endif %}>{{ task.title }}</span>
+  {% if task.deal %}<a class="small muted" href="{{ task.deal.get_absolute_url }}">🗂 {{ task.deal.title|truncatechars:24 }}</a>{% endif %}
+  <span class="spacer" style="margin-left:auto"></span>
+  {% if task.priority == 3 %}<span class="badge warning">高</span>{% endif %}
+  {% if task.is_overdue %}
+    <span class="badge c">{{ task.due_date|date:"n/j" }}</span>
+  {% else %}
+    <span class="small muted nowrap">{{ task.due_date|date:"n/j"|default:"—" }}</span>
+  {% endif %}
+  <button class="btn btn-sm btn-ghost" title="削除"
+          hx-delete="{% url 'crm:task_delete' task.pk %}"
+          hx-target="#task-row-{{ task.pk }}" hx-swap="outerHTML swap:250ms"
+          hx-confirm="このタスクを削除しますか？">🗑</button>
+</div>

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% load crm_extras humanize %}
+{% block title %}{{ contact.full_name }} | 社内CRM{% endblock %}
+{% block heading %}<a href="{% url 'crm:contact_list' %}" class="muted">担当者</a> / {{ contact.full_name }}{% endblock %}
+
+{% block toolbar %}
+  <button class="btn btn-sm" hx-get="{% url 'crm:contact_update' contact.pk %}" hx-target="#modal-body">✏️ 編集</button>
+  <button class="btn btn-sm" hx-get="{% url 'crm:activity_create' %}?contact={{ contact.pk }}&company={{ contact.company.pk }}" hx-target="#modal-body">💬 活動を記録</button>
+{% endblock %}
+
+{% block content %}
+<div class="grid cols-2" style="align-items:start;">
+  <div class="card">
+    <div class="card-head"><h2>プロフィール</h2>{% if contact.is_primary %}<span class="spacer"></span><span class="badge primary">主担当</span>{% endif %}</div>
+    <div class="card-body">
+      <dl class="definition">
+        <dt>氏名</dt>     <dd><strong>{{ contact.full_name }}</strong></dd>
+        <dt>フリガナ</dt> <dd>{{ contact.kana|default:"—" }}</dd>
+        <dt>取引先</dt>   <dd><a href="{{ contact.company.get_absolute_url }}">{{ contact.company.name }}</a></dd>
+        <dt>役職</dt>     <dd>{{ contact.title|default:"—" }}</dd>
+        <dt>メール</dt>   <dd>{% if contact.email %}<a href="mailto:{{ contact.email }}" hx-boost="false">{{ contact.email }}</a>{% else %}—{% endif %}</dd>
+        <dt>電話</dt>     <dd>{{ contact.phone|default:"—" }}</dd>
+        <dt>タグ</dt>     <dd>{% for tag in contact.tags.all %}<span class="badge" style="border-color:{{ tag.color }}; color:{{ tag.color }}">{{ tag.name }}</span> {% empty %}—{% endfor %}</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="card">
+      <div class="card-head"><h2>関連商談</h2></div>
+      <div class="card-body">
+        {% for deal in deals %}
+          <div class="row" style="padding:6px 0; border-bottom:1px solid var(--border);">
+            <a href="{{ deal.get_absolute_url }}">{{ deal.title }}</a>
+            <span class="spacer" style="margin-left:auto"></span>
+            <span class="badge">{{ deal.get_stage_display }}</span>
+            <strong class="mono small">{{ deal.amount|yen }}</strong>
+          </div>
+        {% empty %}<div class="small muted">関連する商談はありません。</div>{% endfor %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>活動履歴</h2></div>
+      <div class="card-body">
+        <ul class="timeline">
+          {% for activity in activities %}
+          <li><span class="bullet">{{ activity.icon }}</span>
+            <div><div class="subject">{{ activity.subject }}</div>
+            <div class="small muted">{{ activity.occurred_at|naturaltime }}</div></div></li>
+          {% empty %}<div class="empty small">履歴なし</div>{% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

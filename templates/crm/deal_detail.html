@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% load crm_extras humanize %}
+{% block title %}{{ deal.title }} | 社内CRM{% endblock %}
+{% block heading %}<a href="{% url 'crm:deal_table' %}" class="muted">商談</a> / {{ deal.title }}{% endblock %}
+
+{% block toolbar %}
+  <button class="btn btn-sm" hx-get="{% url 'crm:deal_update' deal.pk %}" hx-target="#modal-body">✏️ 編集</button>
+  <button class="btn btn-sm" hx-get="{% url 'crm:activity_create' %}?deal={{ deal.pk }}&company={{ deal.company.pk }}" hx-target="#modal-body">💬 活動を記録</button>
+{% endblock %}
+
+{% block content %}
+{% partialdef inline-display %}
+<div class="inline-edit" id="field-{{ field }}"
+     hx-get="{% url 'crm:deal_inline_field' deal.pk field %}?edit=1"
+     hx-target="this" hx-swap="outerHTML" hx-trigger="click" title="クリックして編集">
+  {% model_value deal field as display_value %}
+  <span class="value">{{ display_value|default:"—" }}</span>
+  <span class="pencil">✏️</span>
+</div>
+{% endpartialdef %}
+
+{% partialdef inline-form %}
+<div class="inline-edit" id="field-{{ field }}" data-inline-form>
+  <form hx-post="{% url 'crm:deal_inline_field' deal.pk field %}"
+        hx-target="closest .inline-edit" hx-swap="outerHTML"
+        hx-target-422="closest .inline-edit">
+    {% csrf_token %}
+    {% for f in form %}{{ f }}{{ f.errors }}{% endfor %}
+    <button class="btn btn-sm btn-primary" type="submit">✓</button>
+    <button class="btn btn-sm" type="button" data-cancel
+            hx-get="{% url 'crm:deal_inline_field' deal.pk field %}"
+            hx-target="closest .inline-edit" hx-swap="outerHTML">✕</button>
+  </form>
+</div>
+{% endpartialdef %}
+
+<div class="grid cols-2" style="align-items:start;">
+  <div class="stack">
+    <div class="card">
+      <div class="card-head">
+        <h2>商談情報</h2><span class="spacer"></span>
+        <span class="badge {% if deal.stage == 'won' %}won{% elif deal.stage == 'lost' %}lost{% else %}info{% endif %}">{{ deal.get_stage_display }}</span>
+      </div>
+      <div class="card-body">
+        <dl class="definition">
+          <dt>案件名</dt>     <dd>{% with field="title" %}{% partial inline-display %}{% endwith %}</dd>
+          <dt>取引先</dt>     <dd><a href="{{ deal.company.get_absolute_url }}">{{ deal.company.name }}</a></dd>
+          <dt>担当者</dt>     <dd>{% if deal.contact %}<a href="{{ deal.contact.get_absolute_url }}">{{ deal.contact.full_name }}</a>{% else %}—{% endif %}</dd>
+          <dt>金額</dt>       <dd>{% with field="amount" %}{% partial inline-display %}{% endwith %}</dd>
+          <dt>確度</dt>       <dd>{% with field="probability" %}{% partial inline-display %}{% endwith %} %</dd>
+          <dt>加重金額</dt>   <dd class="mono">{{ deal.weighted_amount|floatformat:0|yen }}</dd>
+          <dt>受注予定日</dt> <dd>{% with field="expected_close_date" %}{% partial inline-display %}{% endwith %}
+                                 {% if deal.is_overdue %}<span class="badge c">期限超過</span>{% endif %}</dd>
+          <dt>営業担当</dt>   <dd>{{ deal.owner|default:"—" }}</dd>
+        </dl>
+        {% if deal.description %}
+          <div style="margin-top:14px;"><div class="small muted">概要</div>{{ deal.description|linebreaks }}</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>関連タスク</h2><span class="spacer"></span>
+        <button class="btn btn-sm" hx-get="{% url 'crm:task_create' %}" hx-target="#modal-body">＋ 追加</button></div>
+      <div class="card-body">
+        {% for task in tasks %}
+          <div class="row" style="padding:5px 0; border-bottom:1px solid var(--border);">
+            <span>{% if task.is_done %}✅{% else %}⬜{% endif %}</span>
+            <span {% if task.is_done %}style="text-decoration:line-through; opacity:.6"{% endif %}>{{ task.title }}</span>
+            <span class="spacer" style="margin-left:auto"></span>
+            <span class="small muted">{{ task.due_date|date:"n/j"|default:"" }}</span>
+          </div>
+        {% empty %}
+          <div class="small muted">タスクはありません。</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>活動履歴</h2></div>
+    <div class="card-body">
+      {% if activities %}
+      <ul class="timeline">
+        {% for activity in activities %}
+        <li>
+          <span class="bullet">{{ activity.icon }}</span>
+          <div style="min-width:0">
+            <div class="subject">{{ activity.subject }}</div>
+            {% if activity.body %}<div class="small muted">{{ activity.body|truncatechars:110 }}</div>{% endif %}
+            <div class="small muted">{{ activity.occurred_at|naturaltime }} · {{ activity.created_by|default:"システム" }}</div>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}<div class="empty small">まだ活動履歴がありません。</div>{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

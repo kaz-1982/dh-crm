@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}ログイン | 社内CRM{% endblock %}
+
+{% block anonymous %}
+<div class="login-wrap">
+  <div class="login-card card">
+    <div class="card-body">
+      <div class="row" style="justify-content:center; margin-bottom:18px;">
+        <span style="font-size:30px;">📇</span>
+        <div><div style="font-weight:700; font-size:17px;">Sales CRM</div>
+        <div class="small muted">社内向け顧客管理システム</div></div>
+      </div>
+
+      {% if form.errors %}
+        <div class="form-error-summary">ユーザー名またはパスワードが違います。</div>
+      {% endif %}
+
+      {# ログインだけは hx-boost を切る（リダイレクト＋セッション更新のため） #}
+      <form method="post" hx-boost="false">
+        {% csrf_token %}
+        <div class="field">
+          <label for="{{ form.username.id_for_label }}">ユーザー名</label>
+          {{ form.username }}
+        </div>
+        <div class="field">
+          <label for="{{ form.password.id_for_label }}">パスワード</label>
+          {{ form.password }}
+        </div>
+        <button class="btn btn-primary" style="width:100%; justify-content:center;">ログイン</button>
+      </form>
+
+      <div class="demo-hint">
+        <strong>デモ用アカウント</strong><br>
+        ユーザー名 <code>tanaka</code> / パスワード <code>demo1234</code><br>
+        管理者は <code>admin</code> / <code>admin1234</code>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

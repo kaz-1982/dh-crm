@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}タスク | 社内CRM{% endblock %}
+{% block heading %}タスク{% endblock %}
+
+{% block toolbar %}
+  <button class="btn btn-sm btn-primary" hx-get="{% url 'crm:task_create' %}" hx-target="#modal-body">＋ タスク追加</button>
+{% endblock %}
+
+{% block content %}
+<div class="stack">
+  <form id="filters" class="card card-body row"
+        hx-get="{% url 'crm:task_list' %}" hx-trigger="change"
+        hx-target="#results" hx-swap="outerHTML" hx-push-url="true">
+    <select name="scope" class="input" style="width:auto;">
+      <option value="mine" {% if scope == "mine" %}selected{% endif %}>自分のタスク</option>
+      <option value="all" {% if scope == "all" %}selected{% endif %}>全員のタスク</option>
+    </select>
+    <label class="row small" style="gap:5px;">
+      <input type="checkbox" name="show_done" value="1" class="checkbox" {% if show_done %}checked{% endif %}> 完了も表示
+    </label>
+  </form>
+
+  {% partialdef results inline %}
+  <div id="results" class="card"
+       hx-get="{% url 'crm:task_list' %}{% querystring %}"
+       hx-trigger="taskListChanged from:body"
+       hx-target="this" hx-swap="outerHTML">
+    <div class="card-head"><h2>{{ tasks|length }} 件</h2></div>
+    <div class="card-body">
+      {% for task in tasks %}
+        {% include "crm/_task_row.html" %}
+      {% empty %}
+        <div class="empty"><span class="icon">✅</span>表示できるタスクがありません。</div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endpartialdef %}
+</div>
+
+{% comment %}
+── Out of Band Swap（OOB）────────────────────────────────────────
+チェックを 1 つ付けただけで、「その行」と「サイドバーのバッジ」という
+画面上の離れた 2 箇所を、1 リクエストで同時に書き換えたい。
+
+そこで返す HTML に hx-swap-oob="true" を付けた要素を混ぜておくと、
+htmx が id で該当要素を探して勝手に差し替えてくれる。
+{% endcomment %}
+{% partialdef row-with-oob %}
+{% include "crm/_task_row.html" %}
+{% if open_count %}
+  <span id="task-badge" class="count" hx-swap-oob="true">{{ open_count }}</span>
+{% else %}
+  <span id="task-badge" hx-swap-oob="true"></span>
+{% endif %}
+{% endpartialdef %}
+{% endblock %}

@@ -1,0 +1,61 @@
+{% comment %}
+エラー処理の方式B: サーバは常に 200 を返し、エラー入りのフォームをそのまま差し替える。
+拡張機能が要らないぶん手軽。company_form.html（方式A）と読み比べてみてほしい。
+{% endcomment %}
+<div class="modal-head">
+  <h2>{{ title }}</h2>
+  <button class="btn btn-ghost btn-sm" onclick="closeModal()" aria-label="閉じる">✕</button>
+</div>
+
+{% comment %}
+hx-disinherit が要る理由:
+htmx の属性は子要素に継承される。hx-disabled-elt をフォームに書くと、
+フォーム内の「自分でリクエストを出す要素」（メール重複チェックの input や
+連動プルダウンの select）にもそれが継承され、各要素が自分を起点に
+`find button[type=submit]` を探して失敗する（コンソールにエラーが出る）。
+このフォームからは継承させない、と明示しておく。
+{% endcomment %}
+<form hx-post="{{ action }}" hx-target="#modal-body" hx-swap="innerHTML"
+      hx-disabled-elt="find button[type=submit]"
+      hx-disinherit="hx-disabled-elt">
+  {% csrf_token %}
+  <div class="modal-body">
+    {% if form.non_field_errors %}<div class="form-error-summary">{{ form.non_field_errors }}</div>{% endif %}
+    {% include "crm/_field.html" with field=form.company %}
+    <div class="grid cols-2">
+      {% include "crm/_field.html" with field=form.last_name %}
+      {% include "crm/_field.html" with field=form.first_name %}
+      {% include "crm/_field.html" with field=form.kana %}
+      {% include "crm/_field.html" with field=form.title %}
+    </div>
+
+    {# 入力しながらサーバに問い合わせる、リアルタイムの重複チェック #}
+    <div class="field {% if form.email.errors %}has-error{% endif %}">
+      <label for="{{ form.email.id_for_label }}">{{ form.email.label }}</label>
+      <input type="email" name="email" id="{{ form.email.id_for_label }}" class="input"
+             value="{{ form.email.value|default:'' }}"
+             hx-get="/contacts/check-email/"
+             hx-trigger="keyup changed delay:500ms, blur"
+             hx-target="#email-feedback"
+             hx-swap="outerHTML"
+             hx-vals='{"pk": "{{ form.instance.pk|default:'' }}"}'>
+      {% partialdef email-feedback inline %}
+        <div id="email-feedback" class="help {% if state == 'error' %}has-error{% endif %}"
+             {% if state == "error" %}style="color: var(--danger)"{% elif state == "ok" %}style="color: var(--success)"{% endif %}>
+          {% if state == "ok" %}✓ {% elif state == "error" %}✕ {% endif %}{{ message }}
+        </div>
+      {% endpartialdef %}
+      {{ form.email.errors }}
+    </div>
+
+    <div class="grid cols-2">
+      {% include "crm/_field.html" with field=form.phone %}
+      {% include "crm/_field.html" with field=form.is_primary %}
+    </div>
+    {% include "crm/_field.html" with field=form.tags %}
+  </div>
+  <div class="modal-foot">
+    <button type="button" class="btn" onclick="closeModal()">キャンセル</button>
+    <button type="submit" class="btn btn-primary"><span class="htmx-indicator spinner"></span> 保存</button>
+  </div>
+</form>

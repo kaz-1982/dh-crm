@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load crm_extras %}
+{% block title %}商談ボード | 社内CRM{% endblock %}
+{% block heading %}商談ボード{% endblock %}
+
+{% block toolbar %}
+  <a class="btn btn-sm" href="{% url 'crm:deal_table' %}">📋 一覧表示</a>
+  <button class="btn btn-sm btn-primary" hx-get="{% url 'crm:deal_create' %}" hx-target="#modal-body">＋ 新規商談</button>
+{% endblock %}
+
+{% block content %}
+{% comment %}
+── ドラッグ&ドロップのカンバン ──────────────────────────────────────
+htmx は属性で書くのが基本だが、ドラッグのような「JS 起点」の操作では
+JS 側から htmx.ajax() を呼ぶ。app.js の initSortable() を参照。
+
+サーバはボード全体（このパーシャル）を返し直す。DOM はすでに動いているが、
+サーバの状態を正としてまるごと描き直すことで、集計値や表示順のズレを防げる。
+{% endcomment %}
+{% partialdef board inline %}
+<div id="board" class="board"
+     hx-get="{% url 'crm:deal_board' %}"
+     hx-trigger="dealListChanged from:body"
+     hx-target="this"
+     hx-swap="outerHTML">
+  {% for column in columns %}
+    <section class="board-col">
+      <header>
+        <div class="title">
+          <span class="dot" style="background: {% if column.stage == 'won' %}var(--success){% elif column.stage == 'lost' %}var(--danger){% else %}var(--primary){% endif %}"></span>
+          {{ column.label }}
+          <span class="badge">{{ column.count }}</span>
+        </div>
+        <div class="sum">{{ column.amount|yen }}</div>
+      </header>
+
+      {# data-stage を SortableJS の onEnd から読む #}
+      <div class="board-list" data-stage="{{ column.stage }}">
+        {% for deal in column.deals %}
+          <article class="deal-card {% if deal.is_overdue %}is-overdue{% endif %}" data-deal-id="{{ deal.pk }}">
+            <div class="name"><a href="{{ deal.get_absolute_url }}">{{ deal.title }}</a></div>
+            <div class="small muted">{{ deal.company.name }}</div>
+            <div class="row" style="justify-content:space-between; margin-top:6px;">
+              <strong class="mono small">{{ deal.amount|yen }}</strong>
+              <span class="badge">{{ deal.probability }}%</span>
+            </div>
+            <div class="meta">
+              {% if deal.owner %}<span class="avatar" style="width:19px;height:19px;font-size:9px;background:{{ deal.owner.avatar_color }}">{{ deal.owner|initials }}</span>{% endif %}
+              <span>{{ deal.expected_close_date|date:"n/j"|default:"—" }}</span>
+              {% if deal.is_overdue %}<span class="badge c">期限超過</span>{% endif %}
+            </div>
+          </article>
+        {% empty %}
+          <div class="small muted" style="text-align:center; padding:14px 0;">ここにドラッグ</div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+</div>
+{% endpartialdef %}
+
+<p class="small muted" style="margin-top:14px;">
+  💡 カードをドラッグして列を移動すると、ステージと確度が自動更新され、活動履歴にも記録されます。
+</p>
+{% endblock %}

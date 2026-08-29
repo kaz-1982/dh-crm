@@ -1,0 +1,28 @@
+<div class="modal-head">
+  <h2>{{ title }}</h2>
+  <button class="btn btn-ghost btn-sm" onclick="closeModal()" aria-label="閉じる">✕</button>
+</div>
+{# hx-disabled-elt はフォーム内の他の htmx 要素に継承させない（contact_form.html の説明を参照）#}
+<form hx-post="{{ action }}" hx-target="#modal-body" hx-swap="innerHTML"
+      hx-target-422="#modal-body" hx-disabled-elt="find button[type=submit]"
+      hx-disinherit="hx-disabled-elt">
+  {% csrf_token %}
+  <div class="modal-body">
+    {% if form.non_field_errors %}<div class="form-error-summary">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="grid cols-2">
+      {% include "crm/_field.html" with field=form.kind %}
+      {% include "crm/_field.html" with field=form.occurred_at %}
+    </div>
+    {% include "crm/_field.html" with field=form.subject %}
+    {% include "crm/_field.html" with field=form.body %}
+    <div class="grid cols-3">
+      {% include "crm/_field.html" with field=form.company %}
+      {% include "crm/_field.html" with field=form.contact %}
+      {% include "crm/_field.html" with field=form.deal %}
+    </div>
+  </div>
+  <div class="modal-foot">
+    <button type="button" class="btn" onclick="closeModal()">キャンセル</button>
+    <button type="submit" class="btn btn-primary"><span class="htmx-indicator spinner"></span> 記録する</button>
+  </div>
+</form>

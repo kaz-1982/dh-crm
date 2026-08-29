@@ -1,0 +1,29 @@
+{% comment %}
+1 フィールドを描画する共通パーツ。全フォームでこれを include する。
+crispy-forms のようなライブラリを入れなくても、これで十分実用になる。
+
+⚠️ 判定順が重要。CheckboxSelectMultiple も input_type は "checkbox" なので、
+複数選択の判定（allow_multiple_selected）を先に見ないと、
+チェックボックス群がまるごと 1 つの <label> の中に入ってしまう。
+{% endcomment %}
+{% if field.field.widget.allow_multiple_selected %}
+  <div class="field {% if field.field.required %}is-required{% endif %}">
+    <label>{{ field.label }}</label>
+    <div class="checkbox-list">{{ field }}</div>
+    {{ field.errors }}
+  </div>
+{% elif field.field.widget.input_type == "checkbox" %}
+  <div class="field">
+    <label style="display:inline-flex; align-items:center; gap:6px; font-weight:500;">
+      {{ field }} {{ field.label }}
+    </label>
+    {{ field.errors }}
+  </div>
+{% else %}
+  <div class="field {% if field.errors %}has-error{% endif %} {% if field.field.required %}is-required{% endif %}">
+    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {{ field }}
+    {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+    {{ field.errors }}
+  </div>
+{% endif %}

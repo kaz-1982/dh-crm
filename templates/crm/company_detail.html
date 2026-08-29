@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% load crm_extras humanize %}
+{% block title %}{{ company.name }} | 社内CRM{% endblock %}
+{% block heading %}<a href="{% url 'crm:company_list' %}" class="muted">取引先</a> / {{ company.name }}{% endblock %}
+
+{% block toolbar %}
+  <button class="btn btn-sm" hx-get="{% url 'crm:company_update' company.pk %}" hx-target="#modal-body">✏️ 編集</button>
+  <button class="btn btn-sm" hx-get="{% url 'crm:activity_create' %}?company={{ company.pk }}" hx-target="#modal-body">💬 活動を記録</button>
+  <button class="btn btn-sm btn-primary" hx-get="{% url 'crm:deal_create' %}?company={{ company.pk }}" hx-target="#modal-body">＋ 商談</button>
+{% endblock %}
+
+{% block content %}
+
+{% comment %}
+── クリックしてその場で編集（click-to-edit）─────────────────────────
+2 つのパーシャルを 1 つの URL で出し分ける、htmx の代表的なパターン。
+
+  表示中 : クリック → GET ?edit=1 → フォームに差し替え
+  編集中 : 保存     → POST        → 表示に差し替え
+           取消     → GET         → 表示に差し替え
+
+どちらも「自分自身(closest .inline-edit)」を outerHTML で置き換えるので、
+状態遷移をクライアント側に一切持たなくて済む。
+{% endcomment %}
+
+{% partialdef inline-display %}
+<div class="inline-edit" id="field-{{ field }}"
+     hx-get="{% url 'crm:company_inline_field' company.pk field %}?edit=1"
+     hx-target="this"
+     hx-swap="outerHTML"
+     hx-trigger="click"
+     title="クリックして編集">
+  {% model_value company field as display_value %}
+  <span class="value">{{ display_value|default:"—" }}</span>
+  <span class="pencil">✏️</span>
+</div>
+{% endpartialdef %}
+
+{% partialdef inline-form %}
+<div class="inline-edit" id="field-{{ field }}" data-inline-form>
+  <form hx-post="{% url 'crm:company_inline_field' company.pk field %}"
+        hx-target="closest .inline-edit"
+        hx-swap="outerHTML"
+        hx-target-422="closest .inline-edit">
+    {% csrf_token %}
+    {% for f in form %}{{ f }}{{ f.errors }}{% endfor %}
+    <button class="btn btn-sm btn-primary" type="submit">✓</button>
+    <button class="btn btn-sm" type="button" data-cancel
+            hx-get="{% url 'crm:company_inline_field' company.pk field %}"
+            hx-target="closest .inline-edit"
+            hx-swap="outerHTML">✕</button>
+  </form>
+</div>
+{% endpartialdef %}
+
+<div class="grid cols-2" style="align-items:start;">
+
+  <div class="stack">
+    <div class="card">
+      <div class="card-head">
+        <h2>基本情報</h2>
+        <span class="spacer"></span>
+        <span class="badge {{ company.rank }}">{{ company.get_rank_display }}</span>
+        <span class="small muted">クリックで直接編集できます</span>
+      </div>
+      <div class="card-body">
+        <dl class="definition">
+          <dt>会社名</dt>      <dd>{% with field="name" %}{% partial inline-display %}{% endwith %}</dd>
+          <dt>業種</dt>        <dd>{{ company.get_industry_display }}</dd>
+          <dt>ランク</dt>      <dd>{% with field="rank" %}{% partial inline-display %}{% endwith %}</dd>
+          <dt>従業員数</dt>    <dd>{% with field="employee_count" %}{% partial inline-display %}{% endwith %}</dd>
+          <dt>電話</dt>        <dd>{% with field="phone" %}{% partial inline-display %}{% endwith %}</dd>
+          <dt>Webサイト</dt>   <dd>{% with field="website" %}{% partial inline-display %}{% endwith %}</dd>
+          <dt>住所</dt>        <dd>{% with field="address" %}{% partial inline-display %}{% endwith %}</dd>
+          <dt>営業担当</dt>    <dd>{{ company.owner|default:"—" }}</dd>
+          <dt>登録日</dt>      <dd class="small muted">{{ company.created_at|date:"Y年n月j日" }}</dd>
+        </dl>
+        <div style="margin-top:14px;">
+          <div class="small muted" style="margin-bottom:4px;">メモ</div>
+          {% with field="note" %}{% partial inline-display %}{% endwith %}
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>担当者 <span class="badge">{{ company.contacts.count }}</span></h2>
+        <span class="spacer"></span>
+        <button class="btn btn-sm" hx-get="{% url 'crm:contact_create' %}" hx-target="#modal-body">＋ 追加</button>
+      </div>
+      {% if company.contacts.all %}
+        <div class="table-wrap"><table class="table">
+          <tbody>
+          {% for contact in company.contacts.all %}
+            <tr id="contact-row-{{ contact.pk }}">
+              <td>
+                <a href="{{ contact.get_absolute_url }}"><strong>{{ contact.full_name }}</strong></a>
+                {% if contact.is_primary %}<span class="badge primary">主担当</span>{% endif %}
+                <div class="small muted">{{ contact.title|default:"—" }}</div>
+              </td>
+              <td class="small">{{ contact.email|default:"—" }}<br>{{ contact.phone|default:"" }}</td>
+              <td class="right">
+                <div class="row-actions">
+                  <button class="btn btn-sm btn-ghost" hx-get="{% url 'crm:contact_update' contact.pk %}" hx-target="#modal-body">✏️</button>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table></div>
+      {% else %}
+        <div class="empty small">担当者が登録されていません。</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="stack">
+    <div class="card">
+      <div class="card-head"><h2>商談 <span class="badge">{{ deals|length }}</span></h2></div>
+      {% if deals %}
+        <div class="table-wrap"><table class="table">
+          <tbody>
+          {% for deal in deals %}
+            <tr>
+              <td><a href="{{ deal.get_absolute_url }}">{{ deal.title }}</a>
+                  <div class="small muted">{{ deal.expected_close_date|date:"Y/n/j"|default:"予定日未定" }}</div></td>
+              <td><span class="badge {% if deal.stage == 'won' %}won{% elif deal.stage == 'lost' %}lost{% else %}info{% endif %}">{{ deal.get_stage_display }}</span></td>
+              <td class="right mono">{{ deal.amount|yen }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table></div>
+      {% else %}
+        <div class="empty small">商談がありません。</div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>活動履歴</h2></div>
+      <div class="card-body">
+        {% if activities %}
+        <ul class="timeline">
+          {% for activity in activities %}
+          <li>
+            <span class="bullet">{{ activity.icon }}</span>
+            <div style="min-width:0">
+              <div class="subject">{{ activity.subject }}</div>
+              {% if activity.body %}<div class="small muted">{{ activity.body|truncatechars:90 }}</div>{% endif %}
+              <div class="small muted">{{ activity.occurred_at|naturaltime }} · {{ activity.created_by|default:"—" }}</div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+          <div class="empty small">まだ活動履歴がありません。</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card card-body row">
+      <span class="small muted">この取引先を削除すると、担当者・商談・活動履歴もすべて削除されます。</span>
+      <span class="spacer" style="margin-left:auto"></span>
+      <button class="btn btn-sm btn-danger"
+              hx-delete="{% url 'crm:company_delete' company.pk %}"
+              hx-confirm="本当に「{{ company.name }}」を削除しますか？"
+              hx-swap="none">削除する</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

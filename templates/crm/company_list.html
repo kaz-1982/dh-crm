@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% load crm_extras %}
+{% block title %}取引先 | 社内CRM{% endblock %}
+{% block heading %}取引先{% endblock %}
+
+{% block toolbar %}
+  <button class="btn btn-primary btn-sm"
+          hx-get="{% url 'crm:company_create' %}"
+          hx-target="#modal-body">＋ 新規登録</button>
+{% endblock %}
+
+{% block content %}
+<div class="stack">
+
+  {% comment %}
+  ── ライブ検索フォーム ──────────────────────────────────────────────
+  form 要素に hx-get を付けると、中の入力値が自動でクエリ文字列になる。
+  change / keyup はフォームまでバブリングするので、トリガーは form 側に
+  1 つ書けば済む（各入力に書かなくてよい）。
+
+  hx-push-url="true" でブラウザの URL も書き換わるため、
+  検索結果のリロード・戻る・共有がすべて期待どおりに動く。
+  {% endcomment %}
+  <form id="filters" class="card card-body row"
+        hx-get="{% url 'crm:company_list' %}"
+        hx-trigger="change, keyup changed delay:350ms, submit"
+        hx-target="#results"
+        hx-swap="outerHTML"
+        hx-push-url="true"
+        hx-include="#sort-state"
+        hx-indicator="#list-spinner">
+    <input type="search" name="q" value="{{ q }}" class="input" style="flex:1; min-width:220px;"
+           placeholder="会社名・カナ・住所で検索…" autocomplete="off">
+
+    <select name="industry" class="input" style="width:auto;">
+      <option value="">全業種</option>
+      {% for value, label in industries %}
+        <option value="{{ value }}" {% if request.GET.industry == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+
+    <select name="rank" class="input" style="width:auto;">
+      <option value="">全ランク</option>
+      {% for value, label in ranks %}
+        <option value="{{ value }}" {% if request.GET.rank == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="row small" style="gap:5px;">
+      <input type="checkbox" name="active_only" value="1" class="checkbox" {% if request.GET.active_only %}checked{% endif %}>
+      有効のみ
+    </label>
+
+    <span id="list-spinner" class="htmx-indicator spinner"></span>
+    <span class="spacer" style="margin-left:auto"></span>
+
+    {# CSV は htmx を通さず素のリンクで落とす #}
+    <a class="btn btn-sm" hx-boost="false" href="{% url 'crm:company_export' %}?q={{ q|urlencode }}">⬇ CSV</a>
+  </form>
+
+  {% comment %}
+  ── 一括操作バー ──────────────────────────────────────────────────
+  hx-include で「チェックの入った行」だけを拾って POST する。
+  {% endcomment %}
+  <div id="bulk-bar" class="card card-body row" hidden style="background: var(--primary-soft); border-color: var(--primary);">
+    <strong><span data-count>0</span> 件を選択中</strong>
+    <span class="spacer" style="margin-left:auto"></span>
+    <button class="btn btn-sm" hx-post="{% url 'crm:company_bulk' %}" hx-vals='{"action":"rank_a"}'
+            hx-include="#results input[name=selected]:checked" hx-swap="none">ランクAにする</button>
+    <button class="btn btn-sm" hx-post="{% url 'crm:company_bulk' %}" hx-vals='{"action":"deactivate"}'
+            hx-include="#results input[name=selected]:checked" hx-swap="none">無効化</button>
+    <button class="btn btn-sm" hx-post="{% url 'crm:company_bulk' %}" hx-vals='{"action":"activate"}'
+            hx-include="#results input[name=selected]:checked" hx-swap="none">有効化</button>
+    <button class="btn btn-sm btn-danger" hx-post="{% url 'crm:company_bulk' %}" hx-vals='{"action":"delete"}'
+            hx-include="#results input[name=selected]:checked" hx-swap="none"
+            hx-confirm="選択した取引先を削除します。よろしいですか？">削除</button>
+  </div>
+
+  {% comment %}
+  ── 結果（htmx で差し替わる範囲）─────────────────────────────────
+  この div ごと outerHTML で入れ替えるので、hx-* 属性も一緒に再生成される。
+
+  hx-trigger="... from:body" は「body で起きたイベントを拾う」の意味。
+  モーダルで保存したときサーバが HX-Trigger: companyListChanged を返すので、
+  一覧側は誰が更新したかを知らずに自分を最新化できる（疎結合）。
+  {% endcomment %}
+  {% partialdef results inline %}
+  <div id="results" class="card dimmable"
+       hx-get="{% url 'crm:company_list' %}{% querystring %}"
+       hx-trigger="companyListChanged from:body, companyCountChanged from:body"
+       hx-target="this"
+       hx-swap="outerHTML">
+
+    <div id="sort-state" hidden>
+      <input type="hidden" name="sort" value="{{ sort_key }}">
+      <input type="hidden" name="dir" value="{% if sort_desc %}desc{% else %}asc{% endif %}">
+    </div>
+
+    <div class="card-head">
+      <span class="small muted">{{ total_count }} 件{% if q %}（「{{ q }}」で検索）{% endif %}</span>
+      <span class="spacer"></span>
+      <span class="small muted">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }} ページ</span>
+    </div>
+
+    {% if page_obj.object_list %}
+    <div class="table-wrap">
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="width:34px;"><input type="checkbox" class="checkbox" data-check-all="#results"></th>
+            {% comment %} ソート可能な列見出し。querystring タグ (Django 5.1+) で
+               「今の検索条件は保ったまま sort と dir だけ差し替えた URL」を作る。
+               `as` で変数に受けておけば href と hx-get の両方に使い回せる。{% endcomment %}
+            {% next_dir 'name' as d %}{% querystring sort='name' dir=d as qs %}
+            <th><a href="{% url 'crm:company_list' %}{{ qs }}" hx-get="{% url 'crm:company_list' %}{{ qs }}"
+                   hx-target="#results" hx-swap="outerHTML" hx-push-url="true">会社名 {% sort_indicator 'name' %}</a></th>
+
+            {% next_dir 'industry' as d %}{% querystring sort='industry' dir=d as qs %}
+            <th><a href="{% url 'crm:company_list' %}{{ qs }}" hx-get="{% url 'crm:company_list' %}{{ qs }}"
+                   hx-target="#results" hx-swap="outerHTML" hx-push-url="true">業種 {% sort_indicator 'industry' %}</a></th>
+
+            {% next_dir 'rank' as d %}{% querystring sort='rank' dir=d as qs %}
+            <th><a href="{% url 'crm:company_list' %}{{ qs }}" hx-get="{% url 'crm:company_list' %}{{ qs }}"
+                   hx-target="#results" hx-swap="outerHTML" hx-push-url="true">ランク {% sort_indicator 'rank' %}</a></th>
+
+            {% next_dir 'employees' as d %}{% querystring sort='employees' dir=d as qs %}
+            <th class="right"><a href="{% url 'crm:company_list' %}{{ qs }}" hx-get="{% url 'crm:company_list' %}{{ qs }}"
+                   hx-target="#results" hx-swap="outerHTML" hx-push-url="true">従業員 {% sort_indicator 'employees' %}</a></th>
+
+            <th class="right">担当者数</th>
+            <th class="right">進行中金額</th>
+            <th>営業担当</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for company in page_obj %}
+            <tr id="company-row-{{ company.pk }}" class="{% if not company.is_active %}is-inactive{% endif %}">
+              <td><input type="checkbox" name="selected" value="{{ company.pk }}" class="checkbox"></td>
+              <td>
+                <a href="{{ company.get_absolute_url }}"><strong>{{ company.name }}</strong></a>
+                {% if company.name_kana %}<div class="small muted">{{ company.name_kana }}</div>{% endif %}
+              </td>
+              <td class="small">{{ company.get_industry_display }}</td>
+              <td><span class="badge {{ company.rank }}">{{ company.get_rank_display }}</span></td>
+              <td class="right mono">{{ company.employee_count|default:"—" }}</td>
+              <td class="right mono">{{ company.contact_count }}</td>
+              <td class="right mono">{{ company.open_deal_amount|yen }}</td>
+              <td class="small">{{ company.owner|default:"—" }}</td>
+              <td>
+                <div class="row-actions">
+                  <button class="btn btn-sm btn-ghost" title="編集"
+                          hx-get="{% url 'crm:company_update' company.pk %}" hx-target="#modal-body">✏️</button>
+                  {# 行を消す: 空レスポンスを outerHTML で当てて、300ms かけてフェードアウト #}
+                  <button class="btn btn-sm btn-ghost" title="削除"
+                          hx-delete="{% url 'crm:company_delete' company.pk %}"
+                          hx-target="#company-row-{{ company.pk }}"
+                          hx-swap="outerHTML swap:300ms"
+                          hx-confirm="「{{ company.name }}」を削除します。関連する担当者・商談もすべて消えます。よろしいですか？">🗑</button>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div class="pager">
+      {% if page_obj.has_previous %}
+        <button class="btn btn-sm" hx-get="{% url 'crm:company_list' %}{% querystring page=page_obj.previous_page_number %}"
+                hx-target="#results" hx-swap="outerHTML" hx-push-url="true">← 前へ</button>
+      {% endif %}
+      <span class="spacer"></span>
+      <span class="small muted">全 {{ page_obj.paginator.count }} 件</span>
+      <span class="spacer"></span>
+      {% if page_obj.has_next %}
+        <button class="btn btn-sm" hx-get="{% url 'crm:company_list' %}{% querystring page=page_obj.next_page_number %}"
+                hx-target="#results" hx-swap="outerHTML" hx-push-url="true">次へ →</button>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="empty">
+      <span class="icon">🏢</span>
+      条件に一致する取引先がありません。
+    </div>
+    {% endif %}
+  </div>
+  {% endpartialdef %}
+</div>
+{% endblock %}

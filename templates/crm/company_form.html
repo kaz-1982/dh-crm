@@ -1,0 +1,44 @@
+{% comment %}
+モーダルの中身。ページ全体ではなく HTML の断片を返す。
+
+エラー処理の方式A: サーバは 422 を返し、`hx-target-422` で差し戻す。
+htmx はデフォルトで 4xx のレスポンスを画面に反映しないので、
+response-targets 拡張を使ってこう書く（担当者フォームは方式Bで書いてある）。
+{% endcomment %}
+<div class="modal-head">
+  <h2>{{ title }}</h2>
+  <button class="btn btn-ghost btn-sm" onclick="closeModal()" aria-label="閉じる">✕</button>
+</div>
+
+{# hx-disabled-elt はフォーム内の他の htmx 要素に継承させない（contact_form.html の説明を参照）#}
+<form hx-post="{{ action }}"
+      hx-target="#modal-body"
+      hx-swap="innerHTML"
+      hx-target-422="#modal-body"
+      hx-disabled-elt="find button[type=submit]"
+      hx-disinherit="hx-disabled-elt">
+  {% csrf_token %}
+  <div class="modal-body">
+    {% if form.non_field_errors %}
+      <div class="form-error-summary">{{ form.non_field_errors }}</div>
+    {% endif %}
+    <div class="grid cols-2">
+      {% include "crm/_field.html" with field=form.name %}
+      {% include "crm/_field.html" with field=form.name_kana %}
+      {% include "crm/_field.html" with field=form.industry %}
+      {% include "crm/_field.html" with field=form.rank %}
+      {% include "crm/_field.html" with field=form.employee_count %}
+      {% include "crm/_field.html" with field=form.owner %}
+      {% include "crm/_field.html" with field=form.phone %}
+      {% include "crm/_field.html" with field=form.website %}
+    </div>
+    {% include "crm/_field.html" with field=form.address %}
+    {% include "crm/_field.html" with field=form.note %}
+  </div>
+  <div class="modal-foot">
+    <button type="button" class="btn" onclick="closeModal()">キャンセル</button>
+    <button type="submit" class="btn btn-primary">
+      <span class="htmx-indicator spinner"></span> 保存
+    </button>
+  </div>
+</form>

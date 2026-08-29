@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}htmx 学習ガイド | 社内CRM{% endblock %}
+{% block heading %}htmx 学習ガイド{% endblock %}
+
+{% block content %}
+<div class="grid cols-2" style="align-items:start;">
+
+<div class="card">
+  <div class="card-head"><h2>このアプリで使っている htmx の要素</h2></div>
+  <div class="card-body">
+
+    <div class="guide-item">
+      <h3><span class="num">1</span> 属性4点セット</h3>
+      <p class="small muted">htmx の基本は「いつ・どこへ・どこに・どう入れるか」の4つだけ。ほぼ全部これの組み合わせ。</p>
+      <pre class="code">hx-get="/companies/"     ← どこへ（メソッドと URL）
+hx-trigger="click"       ← いつ
+hx-target="#results"     ← どこに
+hx-swap="outerHTML"      ← どう入れるか</pre>
+    </div>
+
+    <div class="guide-item">
+      <h3><span class="num">2</span> ライブ検索</h3>
+      <p class="small muted"><code class="inline">changed</code> で「値が変わったときだけ」、<code class="inline">delay:350ms</code> で「打ち終わってから」。この2語で無駄なリクエストが消える。</p>
+      <pre class="code">hx-trigger="keyup changed delay:350ms"</pre>
+      <p class="small">👉 <a href="{% url 'crm:company_list' %}">取引先一覧</a> の検索窓</p>
+    </div>
+
+    <div class="guide-item">
+      <h3><span class="num">3</span> クリックしてその場で編集</h3>
+      <p class="small muted">1本の URL が「表示用HTML」と「編集フォーム」を出し分ける。状態はサーバだけが持つ。</p>
+      <pre class="code">表示 --click--> GET ?edit=1 --> フォーム
+フォーム --submit--> POST   --> 表示</pre>
+      <p class="small">👉 <a href="{% url 'crm:company_list' %}">取引先</a>の詳細ページで、電話番号などをクリック</p>
+    </div>
+
+    <div class="guide-item">
+      <h3><span class="num">4</span> モーダル</h3>
+      <p class="small muted">標準の <code class="inline">&lt;dialog&gt;</code> を空で置いておき、htmx が中身を差し込む。保存成功時はサーバが <code class="inline">204 No Content</code> ＋ ヘッダで「閉じろ」と指示する。</p>
+      <pre class="code">HX-Trigger: {"closeModal": {}, "toast": {...}}</pre>
+      <p class="small">👉 どのページでも「＋ 新規」ボタン</p>
+    </div>
+
+    <div class="guide-item">
+      <h3><span class="num">5</span> Out of Band Swap</h3>
+      <p class="small muted">1レスポンスで画面の離れた複数箇所を更新する。返す HTML に混ぜておくだけ。</p>
+      <pre class="code">&lt;span id="task-badge" hx-swap-oob="true"&gt;3&lt;/span&gt;</pre>
+      <p class="small">👉 <a href="{% url 'crm:task_list' %}">タスク</a>のチェックを付けると、行とサイドバーのバッジが同時に変わる</p>
+    </div>
+
+    <div class="guide-item">
+      <h3><span class="num">6</span> イベントによる疎結合</h3>
+      <p class="small muted">「モーダルが一覧を更新する」と書くと密結合になる。サーバがイベント名を投げ、一覧は自分で自分を更新する形にする。</p>
+      <pre class="code">サーバ: HX-Trigger: {"companyListChanged": {}}
+一覧:   hx-trigger="companyListChanged from:body"</pre>
+    </div>
+
+    <div class="guide-item">
+      <h3><span class="num">7</span> 無限スクロール</h3>
+      <p class="small muted">最後の要素に <code class="inline">revealed</code>。スクロール監視のコードは書かない。</p>
+      <pre class="code">hx-trigger="revealed" hx-swap="beforeend"</pre>
+      <p class="small">👉 <a href="{% url 'crm:activity_list' %}">活動履歴</a>を下までスクロール</p>
+    </div>
+
+    <div class="guide-item">
+      <h3><span class="num">8</span> ポーリングと遅延ロード</h3>
+      <pre class="code">hx-trigger="every 30s"  ← 定期更新
+hx-trigger="load"       ← 表示直後に1回だけ</pre>
+      <p class="small">👉 <a href="{% url 'crm:dashboard' %}">ダッシュボード</a>の KPI とパイプライン</p>
+    </div>
+  </div>
+</div>
+
+<div class="stack">
+  <div class="card">
+    <div class="card-head"><h2>その場で試す</h2></div>
+    <div class="card-body">
+
+      <p class="small muted"><strong>hx-indicator</strong>：通信中だけ表示される要素を指定する。ボタンを押すと 1.5 秒かかるエンドポイントを叩く。</p>
+      <div class="demo-box">
+        <button class="btn btn-primary btn-sm"
+                hx-get="{% url 'crm:guide_slow' %}"
+                hx-target="#slow-result"
+                hx-swap="outerHTML"
+                hx-indicator="#slow-spinner"
+                hx-disabled-elt="this">
+          遅いAPIを呼ぶ
+        </button>
+        <span id="slow-spinner" class="htmx-indicator row small muted" style="display:inline-flex">
+          <span class="spinner"></span> 待っています…
+        </span>
+        {% partialdef slow-result inline %}
+          <div id="slow-result" class="small muted" style="margin-top:8px;">
+            サーバ時刻: <strong>{{ now|date:"H:i:s" }}</strong>（ボタンを押すと更新されます）
+          </div>
+        {% endpartialdef %}
+      </div>
+
+      <p class="small muted" style="margin-top:18px;"><strong>hx-confirm</strong>：送信前に確認ダイアログを出す。</p>
+      <div class="demo-box">
+        <button class="btn btn-sm" hx-get="{% url 'crm:guide_slow' %}" hx-target="#slow-result" hx-swap="outerHTML"
+                hx-confirm="本当に実行しますか？">確認つきで実行</button>
+      </div>
+
+      <p class="small muted" style="margin-top:18px;"><strong>hx-swap のタイミング指定</strong>：CSS トランジションと組み合わせる。</p>
+      <pre class="code">hx-swap="outerHTML swap:300ms"</pre>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>もっと詳しく</h2></div>
+    <div class="card-body">
+      <p class="small muted">
+        リポジトリの <code class="inline">docs/</code> に学習用のドキュメント一式があります。
+        このページはその要約です。
+      </p>
+      <ul class="small" style="margin:8px 0 0; padding-left:18px; line-height:2;">
+        <li><code class="inline">docs/02-architecture.md</code> — 全体像・データモデル・リクエストの流れ</li>
+        <li><code class="inline">docs/03-htmx-reference.md</code> — 属性 / swap / trigger / ヘッダの早見表</li>
+        <li><code class="inline">docs/04-patterns.md</code> — <strong>実装パターン20個の詳解</strong></li>
+        <li><code class="inline">docs/05-django-features.md</code> — テンプレートパーシャルほか</li>
+        <li><code class="inline">docs/06-pitfalls.md</code> — 実際に踏んだバグ12件</li>
+        <li><code class="inline">docs/07-testing.md</code> — テストの書き方</li>
+        <li><code class="inline">docs/08-exercises.md</code> — 練習問題12問</li>
+        <li><code class="inline">docs/09-production.md</code> — 本番化チェックリスト</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Django 6.1 側のポイント</h2></div>
+    <div class="card-body">
+      <div class="guide-item">
+        <h3>テンプレートパーシャル</h3>
+        <p class="small muted">Django 6.0 で標準搭載。フルページ用とhtmx断片用でテンプレートを2つに分けなくてよくなった。</p>
+        <pre class="code">{% templatetag openblock %} partialdef results inline {% templatetag closeblock %}
+  &lt;div id="results"&gt;…&lt;/div&gt;
+{% templatetag openblock %} endpartialdef {% templatetag closeblock %}
+
+# views.py
+render(request, "crm/company_list.html#results", ctx)</pre>
+      </div>
+      <div class="guide-item">
+        <h3>querystring タグ</h3>
+        <p class="small muted">Django 5.1 で追加。今の GET パラメータを保ったまま一部だけ差し替えた URL を作る。ページングとソートに必須。</p>
+        <pre class="code">{% templatetag openblock %} querystring page=page_obj.next_page_number {% templatetag closeblock %}</pre>
+      </div>
+      <div class="guide-item">
+        <h3>django-htmx</h3>
+        <p class="small muted">ミドルウェアが <code class="inline">request.htmx</code> を生やす。ヘッダを直接触らずに済む。</p>
+        <pre class="code">if request.htmx:
+    return render(request, "list.html#rows", ctx)
+
+trigger_client_event(response, "toast", {...})
+return HttpResponseClientRedirect("/companies/")</pre>
+      </div>
+      <div class="guide-item">
+        <h3>CSRF</h3>
+        <p class="small muted">body に一度書けば全リクエストに乗る（属性は子要素に継承される）。</p>
+        <pre class="code">&lt;body hx-headers='{"X-CSRFToken": "…"}'&gt;</pre>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+{% endblock %}

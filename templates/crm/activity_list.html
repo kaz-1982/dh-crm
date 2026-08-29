@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% load crm_extras humanize %}
+{% block title %}活動履歴 | 社内CRM{% endblock %}
+{% block heading %}活動履歴{% endblock %}
+
+{% block toolbar %}
+  <button class="btn btn-sm btn-primary" hx-get="{% url 'crm:activity_create' %}" hx-target="#modal-body">＋ 活動を記録</button>
+{% endblock %}
+
+{% block content %}
+<div class="stack">
+  <form id="filters" class="card card-body row"
+        hx-get="{% url 'crm:activity_list' %}"
+        hx-trigger="change, keyup changed delay:350ms, submit"
+        hx-target="#feed" hx-swap="outerHTML" hx-push-url="true">
+    <input type="search" name="q" value="{{ q }}" class="input" style="flex:1; min-width:200px;"
+           placeholder="件名・内容で検索…" autocomplete="off">
+    <select name="kind" class="input" style="width:auto;">
+      <option value="">すべての種別</option>
+      {% for value, label in kinds %}
+        <option value="{{ value }}" {% if kind == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <span class="htmx-indicator spinner"></span>
+  </form>
+
+  {% partialdef feed inline %}
+  <div id="feed" class="card"
+       hx-get="{% url 'crm:activity_list' %}{% querystring %}"
+       hx-trigger="activityListChanged from:body"
+       hx-target="this" hx-swap="outerHTML">
+    <div class="card-head"><span class="small muted">{{ total_count }} 件</span></div>
+    <div class="card-body">
+      {% if page_obj.object_list %}
+        <ul class="timeline" id="activity-items">
+          {% partial items %}
+        </ul>
+      {% else %}
+        <div class="empty"><span class="icon">💬</span>活動履歴がありません。</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endpartialdef %}
+</div>
+
+{% comment %}
+── 無限スクロール ──────────────────────────────────────────────────
+最後の <li> に hx-trigger="revealed" を付けるだけ。
+その要素が画面に現れた瞬間に次ページを GET し、
+hx-swap="beforeend" で「ul の末尾に継ぎ足す」。
+
+ここでは「読み込みマーカー」を最後の項目自体に載せているので、
+スクロール監視のコードを一行も書かずに済む。
+{% endcomment %}
+{% partialdef items %}
+  {% for activity in page_obj %}
+    <li {% if forloop.last and page_obj.has_next %}
+          hx-get="{% url 'crm:activity_list' %}{% querystring page=page_obj.next_page_number %}"
+          hx-trigger="revealed"
+          hx-target="#activity-items"
+          hx-swap="beforeend"
+        {% endif %}>
+      <span class="bullet">{{ activity.icon }}</span>
+      <div style="min-width:0; flex:1;">
+        <div class="row" style="justify-content:space-between;">
+          <span class="subject">{{ activity.subject }}</span>
+          <span class="badge">{{ activity.get_kind_display }}</span>
+        </div>
+        {% if activity.body %}<div class="small muted">{{ activity.body|truncatechars:140 }}</div>{% endif %}
+        <div class="small muted">
+          {% if activity.company %}<a href="{{ activity.company.get_absolute_url }}">{{ activity.company.name }}</a> · {% endif %}
+          {% if activity.deal %}<a href="{{ activity.deal.get_absolute_url }}">{{ activity.deal.title }}</a> · {% endif %}
+          {{ activity.occurred_at|date:"Y/n/j H:i" }}（{{ activity.occurred_at|naturaltime }}）· {{ activity.created_by|default:"—" }}
+        </div>
+      </div>
+    </li>
+  {% endfor %}
+{% endpartialdef %}
+{% endblock %}

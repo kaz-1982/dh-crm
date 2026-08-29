@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% load crm_extras humanize %}
+{% block title %}ダッシュボード | 社内CRM{% endblock %}
+{% block heading %}ダッシュボード{% endblock %}
+
+{% block toolbar %}
+  <button class="btn btn-sm" hx-get="{% url 'crm:activity_create' %}" hx-target="#modal-body">💬 活動を記録</button>
+  <button class="btn btn-sm btn-primary" hx-get="{% url 'crm:deal_create' %}" hx-target="#modal-body">＋ 新規商談</button>
+{% endblock %}
+
+{% block content %}
+<div class="stack">
+
+  {% comment %}
+  ── ポーリング（定期更新）────────────────────────────────────────
+  hx-trigger="every 30s" だけで「30秒ごとに取りに行って差し替える」が実現する。
+  WebSocket を持ち出すほどでもない画面は、まずこれで十分なことが多い。
+  {% endcomment %}
+  {% partialdef kpi inline %}
+  <div id="kpi" class="grid cols-4"
+       hx-get="{% url 'crm:dashboard_kpi' %}"
+       hx-trigger="every 30s, dealListChanged from:body"
+       hx-target="this"
+       hx-swap="outerHTML">
+    <div class="card card-body kpi">
+      <div class="label">進行中の商談</div>
+      <div class="value">{{ kpi_open_count }} <span class="small muted">件</span></div>
+      <div class="foot">合計 {{ kpi_open_amount|yen }}</div>
+    </div>
+    <div class="card card-body kpi">
+      <div class="label">加重パイプライン</div>
+      <div class="value">{{ kpi_weighted|floatformat:0|yen }}</div>
+      <div class="foot">確度で重み付けした見込み</div>
+    </div>
+    <div class="card card-body kpi">
+      <div class="label">今月の受注</div>
+      <div class="value" style="color: var(--success)">{{ kpi_won_amount|yen }}</div>
+      <div class="foot">{{ kpi_updated_at|date:"n月" }}分</div>
+    </div>
+    <div class="card card-body kpi">
+      <div class="label">期限超過の商談</div>
+      <div class="value" style="color: {% if kpi_overdue %}var(--danger){% else %}inherit{% endif %}">{{ kpi_overdue }} <span class="small muted">件</span></div>
+      <div class="foot">取引先 {{ kpi_company_count }} 社 · {{ kpi_updated_at|date:"H:i:s" }} 更新</div>
+    </div>
+  </div>
+  {% endpartialdef %}
+
+  <div class="grid cols-2" style="align-items:start;">
+
+    {% comment %}
+    ── 遅延ロード（lazy loading）────────────────────────────────
+    hx-trigger="load" は「表示された直後に1回だけ」取りに行く。
+    重い集計を初期表示から切り離すのに使う定番。
+    {% endcomment %}
+    <div class="card">
+      <div class="card-head"><h2>ステージ別パイプライン</h2>
+        <span class="spacer"></span><span class="small muted">遅延ロード</span></div>
+      <div class="card-body" hx-get="{% url 'crm:dashboard_pipeline' %}" hx-trigger="load" hx-swap="innerHTML">
+        <div class="row muted small"><span class="spinner"></span> 集計中…</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>自分のタスク</h2><span class="spacer"></span>
+        <a class="btn btn-sm" href="{% url 'crm:task_list' %}">すべて見る</a></div>
+      <div class="card-body">
+        {% for task in my_tasks %}
+          {# タスク一覧と同じパーシャルを使い回す #}
+          {% include "crm/_task_row.html" %}
+        {% empty %}
+          <div class="empty small">未完了のタスクはありません 🎉</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>最近の活動</h2><span class="spacer"></span>
+      <a class="btn btn-sm" href="{% url 'crm:activity_list' %}">すべて見る</a></div>
+    <div class="card-body">
+      <ul class="timeline">
+        {% for activity in recent_activities %}
+        <li>
+          <span class="bullet">{{ activity.icon }}</span>
+          <div style="min-width:0">
+            <div class="subject">{{ activity.subject }}</div>
+            <div class="small muted">
+              {% if activity.company %}{{ activity.company.name }} · {% endif %}
+              {{ activity.occurred_at|naturaltime }} · {{ activity.created_by|default:"—" }}
+            </div>
+          </div>
+        </li>
+        {% empty %}<div class="empty small">活動履歴がありません。</div>{% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+
+{% partialdef pipeline %}
+<div class="stack" style="gap:11px;">
+  {% for row in pipeline %}
+    <div>
+      <div class="row small" style="justify-content:space-between;">
+        <span>{{ row.label }} <span class="badge">{{ row.count }}</span></span>
+        <strong class="mono">{{ row.amount|yen }}</strong>
+      </div>
+      <div style="height:7px; background: var(--surface-2); border-radius:99px; overflow:hidden; margin-top:4px;">
+        <div style="height:100%; width: {{ row.percent }}%; background: var(--primary); border-radius:99px;"></div>
+      </div>
+    </div>
+  {% empty %}
+    <div class="small muted">進行中の商談がありません。</div>
+  {% endfor %}
+</div>
+{% endpartialdef %}
+{% endblock %}

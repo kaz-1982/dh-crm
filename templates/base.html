@@ -1,0 +1,110 @@
+{% load static crm_extras %}<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}社内CRM{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}{{ asset_v }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📇</text></svg>">
+  <script src="{% static 'vendor/htmx.min.js' %}{{ asset_v }}" defer></script>
+  <script src="{% static 'vendor/htmx-ext-response-targets.js' %}{{ asset_v }}" defer></script>
+  <script src="{% static 'vendor/sortable.min.js' %}{{ asset_v }}" defer></script>
+</head>
+
+{% comment %}
+  body に付けた属性は、中のすべての要素に継承される（htmx の属性継承）。
+  - hx-headers  : 全リクエストに CSRF トークンを自動で付ける（これが定石）
+  - hx-boost    : 通常の <a>/<form> を ajax 化し、body だけ差し替える
+  - hx-ext      : 拡張機能の有効化。response-targets は 4xx の行き先を指定できる
+{% endcomment %}
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+      hx-boost="true"
+      hx-ext="response-targets">
+
+{% if user.is_authenticated %}
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><span class="logo">📇</span> Sales CRM</div>
+
+    <div class="nav-section">ワークスペース</div>
+    <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'crm:dashboard' %}"><span class="icon">📊</span> ダッシュボード</a>
+    <a class="nav-link {% if request.resolver_match.url_name == 'deal_board' %}active{% endif %}" href="{% url 'crm:deal_board' %}">
+      <span class="icon">🗂</span> 商談ボード
+      {% if badge_open_deals %}<span class="count">{{ badge_open_deals }}</span>{% endif %}
+    </a>
+    <a class="nav-link {% if request.resolver_match.url_name == 'deal_table' %}active{% endif %}" href="{% url 'crm:deal_table' %}"><span class="icon">📋</span> 商談一覧</a>
+
+    <div class="nav-section">データベース</div>
+    <a class="nav-link {% if request.resolver_match.url_name == 'company_list' %}active{% endif %}" href="{% url 'crm:company_list' %}"><span class="icon">🏢</span> 取引先</a>
+    <a class="nav-link {% if request.resolver_match.url_name == 'contact_list' %}active{% endif %}" href="{% url 'crm:contact_list' %}"><span class="icon">👤</span> 担当者</a>
+    <a class="nav-link {% if request.resolver_match.url_name == 'activity_list' %}active{% endif %}" href="{% url 'crm:activity_list' %}"><span class="icon">💬</span> 活動履歴</a>
+    <a class="nav-link {% if request.resolver_match.url_name == 'task_list' %}active{% endif %}" href="{% url 'crm:task_list' %}">
+      <span class="icon">✅</span> タスク
+      {% if badge_my_tasks %}<span id="task-badge" class="count">{{ badge_my_tasks }}</span>{% else %}<span id="task-badge"></span>{% endif %}
+    </a>
+
+    <div class="nav-section">学習</div>
+    <a class="nav-link {% if request.resolver_match.url_name == 'guide' %}active{% endif %}" href="{% url 'crm:guide' %}"><span class="icon">📘</span> htmx ガイド</a>
+    <a class="nav-link" href="/admin/" hx-boost="false"><span class="icon">⚙️</span> 管理サイト</a>
+
+    <div class="sidebar-foot">
+      <div class="row" style="padding: 4px 8px;">
+        <div class="avatar" style="background: {{ user.avatar_color }}">{{ user|initials }}</div>
+        <div style="min-width:0">
+          <div style="color:#fff; font-size:12.5px; font-weight:600;">{{ user }}</div>
+          <div style="font-size:11px; opacity:.65;">{{ user.get_department_display|default:"—" }}</div>
+        </div>
+      </div>
+      <form method="post" action="{% url 'logout' %}" hx-boost="false" style="margin-top:6px;">
+        {% csrf_token %}
+        <button class="nav-link" style="width:100%; background:none; border:none; cursor:pointer; font-family:inherit; font-size:13px;">
+          <span class="icon">🚪</span> ログアウト
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <h1>{% block heading %}{% endblock %}</h1>
+      {% block toolbar %}{% endblock %}
+      <span class="spacer"></span>
+      {# htmx の通信中だけ回るグローバルスピナー #}
+      <span id="global-spinner" class="htmx-indicator row small muted"><span class="spinner"></span> 読み込み中</span>
+    </header>
+
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+{% else %}
+  {% block anonymous %}{% endblock %}
+{% endif %}
+
+{% comment %}
+  モーダル。中身は空で置いておき、htmx が #modal-body に
+  フォームの断片を差し込んだ瞬間に app.js が dialog を開く。
+{% endcomment %}
+<dialog id="modal" aria-modal="true">
+  <div id="modal-body"></div>
+</dialog>
+
+{# トーストの置き場。サーバは HX-Trigger ヘッダを返すだけでここに出る #}
+<div id="toasts" aria-live="polite"></div>
+
+{# 通常のページ遷移で出た Django messages も、同じトーストに流し込む #}
+{% if messages %}
+<script>
+  window.addEventListener("DOMContentLoaded", () => {
+    {% for message in messages %}
+      window.showToast({{ message|escapejs|stringformat:'"%s"' }}, "{{ message.tags|default:'info' }}");
+    {% endfor %}
+  });
+</script>
+{% endif %}
+
+<script src="{% static 'js/app.js' %}{{ asset_v }}" defer></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

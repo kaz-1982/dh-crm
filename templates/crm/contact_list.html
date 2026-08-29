@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% load crm_extras %}
+{% block title %}担当者 | 社内CRM{% endblock %}
+{% block heading %}担当者{% endblock %}
+
+{% block toolbar %}
+  <button class="btn btn-sm btn-primary" hx-get="{% url 'crm:contact_create' %}" hx-target="#modal-body">＋ 新規登録</button>
+{% endblock %}
+
+{% block content %}
+<div class="stack">
+  <form id="filters" class="card card-body row"
+        hx-get="{% url 'crm:contact_list' %}"
+        hx-trigger="change, keyup changed delay:350ms, submit"
+        hx-target="#results" hx-swap="outerHTML" hx-push-url="true"
+        hx-include="#sort-state" hx-indicator="#list-spinner">
+    <input type="search" name="q" value="{{ q }}" class="input" style="flex:1; min-width:220px;"
+           placeholder="氏名・フリガナ・メール・会社名で検索…" autocomplete="off">
+    <select name="company" class="input" style="width:auto; max-width:220px;">
+      <option value="">全取引先</option>
+      {% for company in companies %}
+        <option value="{{ company.pk }}" {% if request.GET.company == company.pk|stringformat:"s" %}selected{% endif %}>{{ company.name }}</option>
+      {% endfor %}
+    </select>
+    <label class="row small" style="gap:5px;">
+      <input type="checkbox" name="primary_only" value="1" class="checkbox" {% if request.GET.primary_only %}checked{% endif %}> 主担当のみ
+    </label>
+    <span id="list-spinner" class="htmx-indicator spinner"></span>
+  </form>
+
+  {% partialdef results inline %}
+  <div id="results" class="card dimmable"
+       hx-get="{% url 'crm:contact_list' %}{% querystring %}"
+       hx-trigger="contactListChanged from:body"
+       hx-target="this" hx-swap="outerHTML">
+
+    <div id="sort-state" hidden>
+      <input type="hidden" name="sort" value="{{ sort_key }}">
+      <input type="hidden" name="dir" value="{% if sort_desc %}desc{% else %}asc{% endif %}">
+    </div>
+
+    <div class="card-head">
+      <span class="small muted">{{ total_count }} 件{% if q %}（「{{ q }}」で検索）{% endif %}</span>
+      <span class="spacer"></span>
+      <span class="small muted">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }} ページ</span>
+    </div>
+
+    {% if page_obj.object_list %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr>
+        {% next_dir 'name' as d %}{% querystring sort='name' dir=d as qs %}
+        <th><a href="{% url 'crm:contact_list' %}{{ qs }}" hx-get="{% url 'crm:contact_list' %}{{ qs }}"
+               hx-target="#results" hx-swap="outerHTML" hx-push-url="true">氏名 {% sort_indicator 'name' %}</a></th>
+        {% next_dir 'company' as d %}{% querystring sort='company' dir=d as qs %}
+        <th><a href="{% url 'crm:contact_list' %}{{ qs }}" hx-get="{% url 'crm:contact_list' %}{{ qs }}"
+               hx-target="#results" hx-swap="outerHTML" hx-push-url="true">取引先 {% sort_indicator 'company' %}</a></th>
+        <th>役職</th><th>連絡先</th><th>タグ</th><th></th>
+      </tr></thead>
+      <tbody>
+        {% for contact in page_obj %}
+        <tr id="contact-row-{{ contact.pk }}">
+          <td>
+            <a href="{{ contact.get_absolute_url }}"><strong>{{ contact.full_name }}</strong></a>
+            {% if contact.is_primary %}<span class="badge primary">主</span>{% endif %}
+            {% if contact.kana %}<div class="small muted">{{ contact.kana }}</div>{% endif %}
+          </td>
+          <td class="small"><a href="{{ contact.company.get_absolute_url }}">{{ contact.company.name }}</a></td>
+          <td class="small">{{ contact.title|default:"—" }}</td>
+          <td class="small">{{ contact.email|default:"—" }}{% if contact.phone %}<div class="muted">{{ contact.phone }}</div>{% endif %}</td>
+          <td>{% for tag in contact.tags.all %}<span class="badge" style="border-color:{{ tag.color }}; color:{{ tag.color }}">{{ tag.name }}</span> {% endfor %}</td>
+          <td><div class="row-actions">
+            <button class="btn btn-sm btn-ghost" hx-get="{% url 'crm:contact_update' contact.pk %}" hx-target="#modal-body">✏️</button>
+            <button class="btn btn-sm btn-ghost"
+                    hx-delete="{% url 'crm:contact_delete' contact.pk %}"
+                    hx-target="#contact-row-{{ contact.pk }}" hx-swap="outerHTML swap:300ms"
+                    hx-confirm="{{ contact.full_name }} さんを削除しますか？">🗑</button>
+          </div></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div class="pager">
+      {% if page_obj.has_previous %}
+        <button class="btn btn-sm" hx-get="{% url 'crm:contact_list' %}{% querystring page=page_obj.previous_page_number %}"
+                hx-target="#results" hx-swap="outerHTML" hx-push-url="true">← 前へ</button>
+      {% endif %}
+      <span class="spacer"></span><span class="small muted">全 {{ page_obj.paginator.count }} 件</span><span class="spacer"></span>
+      {% if page_obj.has_next %}
+        <button class="btn btn-sm" hx-get="{% url 'crm:contact_list' %}{% querystring page=page_obj.next_page_number %}"
+                hx-target="#results" hx-swap="outerHTML" hx-push-url="true">次へ →</button>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+      <div class="empty"><span class="icon">👤</span>条件に一致する担当者がいません。</div>
+    {% endif %}
+  </div>
+  {% endpartialdef %}
+</div>
+{% endblock %}

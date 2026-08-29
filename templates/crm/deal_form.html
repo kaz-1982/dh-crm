@@ -1,0 +1,73 @@
+{% comment %}
+連動プルダウン（cascading select）のデモ。
+取引先 <select> が変わったら担当者 <select> の <option> だけを取りに行く。
+{% endcomment %}
+<div class="modal-head">
+  <h2>{{ title }}</h2>
+  <button class="btn btn-ghost btn-sm" onclick="closeModal()" aria-label="閉じる">✕</button>
+</div>
+
+{% comment %}
+hx-disinherit が要る理由:
+htmx の属性は子要素に継承される。hx-disabled-elt をフォームに書くと、
+フォーム内の「自分でリクエストを出す要素」（メール重複チェックの input や
+連動プルダウンの select）にもそれが継承され、各要素が自分を起点に
+`find button[type=submit]` を探して失敗する（コンソールにエラーが出る）。
+このフォームからは継承させない、と明示しておく。
+{% endcomment %}
+<form hx-post="{{ action }}" hx-target="#modal-body" hx-swap="innerHTML"
+      hx-target-422="#modal-body" hx-disabled-elt="find button[type=submit]"
+      hx-disinherit="hx-disabled-elt">
+  {% csrf_token %}
+  <div class="modal-body">
+    {% if form.non_field_errors %}<div class="form-error-summary">{{ form.non_field_errors }}</div>{% endif %}
+    {% include "crm/_field.html" with field=form.title %}
+
+    <div class="grid cols-2">
+      <div class="field is-required">
+        <label for="{{ form.company.id_for_label }}">{{ form.company.label }}</label>
+        {# 取引先を選ぶと担当者の option を差し替える #}
+        <select name="company" id="{{ form.company.id_for_label }}" class="input" required
+                hx-get="/contacts/options/"
+                hx-target="#id_contact"
+                hx-swap="innerHTML"
+                hx-indicator="#contact-loading">
+          <option value="">---------</option>
+          {% for choice in form.fields.company.queryset %}
+            <option value="{{ choice.pk }}" {% if form.company.value|stringformat:"s" == choice.pk|stringformat:"s" %}selected{% endif %}>{{ choice.name }}</option>
+          {% endfor %}
+        </select>
+        {{ form.company.errors }}
+      </div>
+
+      <div class="field">
+        <label for="id_contact">
+          {{ form.contact.label }}
+          <span id="contact-loading" class="htmx-indicator spinner" style="vertical-align:-2px"></span>
+        </label>
+        <select name="contact" id="id_contact" class="input">
+          {% partialdef contact-options inline %}
+            <option value="">---------</option>
+            {% for contact in contacts %}
+              <option value="{{ contact.pk }}" {% if form.contact.value|stringformat:"s" == contact.pk|stringformat:"s" %}selected{% endif %}>
+                {{ contact.full_name }}{% if contact.title %}（{{ contact.title }}）{% endif %}
+              </option>
+            {% endfor %}
+          {% endpartialdef %}
+        </select>
+        {{ form.contact.errors }}
+      </div>
+
+      {% include "crm/_field.html" with field=form.amount %}
+      {% include "crm/_field.html" with field=form.stage %}
+      {% include "crm/_field.html" with field=form.probability %}
+      {% include "crm/_field.html" with field=form.expected_close_date %}
+      {% include "crm/_field.html" with field=form.owner %}
+    </div>
+    {% include "crm/_field.html" with field=form.description %}
+  </div>
+  <div class="modal-foot">
+    <button type="button" class="btn" onclick="closeModal()">キャンセル</button>
+    <button type="submit" class="btn btn-primary"><span class="htmx-indicator spinner"></span> 保存</button>
+  </div>
+</form>
