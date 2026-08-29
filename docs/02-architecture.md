@@ -9,7 +9,7 @@
 2. **返すのは HTML の断片** — JSON を返して JS で組み立てる、をしない
 3. **画面の更新指示はレスポンスヘッダ** — `HX-Trigger` でイベントを飛ばす
 
-結果として、`static/js/app.js` は **約 160 行** に収まっています。
+結果として、`static/js/app.js` は **約 170 行** に収まっています。
 書いてあるのは「サーバから飛んでくるイベントの受け口」と
 「SortableJS の初期化」だけで、業務ロジックは 1 行もありません。
 
@@ -208,7 +208,7 @@ templates/
 
 static/
   css/app.css               素の CSS 1枚（ダークモード対応）
-  js/app.js                 約160行。トースト / モーダル / Sortable / エラー処理
+  js/app.js                 約170行。トースト / モーダル / Sortable / エラー処理
   vendor/                   htmx、response-targets 拡張、SortableJS
 ```
 

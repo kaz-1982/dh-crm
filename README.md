@@ -1,11 +1,13 @@
 # 社内CRM — Django 6.1 + htmx 学習用サンプル
 
+[![test](https://github.com/kaz-1982/dh-crm/actions/workflows/test.yml/badge.svg)](https://github.com/kaz-1982/dh-crm/actions/workflows/test.yml)
+
 社内向けの顧客管理システム（CRM）を題材に、**Django 6.1 と htmx 2 の組み合わせ方**を
 手を動かして学ぶためのサンプルアプリです。
 
 React も Vue も npm も使わず、**サーバが HTML の断片を返すだけ**で、
 モーダル・ライブ検索・ドラッグ&ドロップ・無限スクロール・トースト通知まで実装しています。
-クライアント側の JavaScript は **約 160 行** です。
+クライアント側の JavaScript は **約 170 行** です。
 
 ```
 Python 3.13 / Django 6.1 / htmx 2.0.10 / django-htmx 1.29 / SQLite
@@ -113,7 +115,7 @@ config/          プロジェクト設定
 accounts/        カスタムユーザー
 crm/             ★ ドメインと htmx の実装
 templates/       ★ {% partialdef %} でフルページと断片が同居
-static/          CSS 1枚 + JS 170行 + vendor（htmx / SortableJS）
+static/          CSS 1枚 + JS 約170行 + vendor（htmx / SortableJS）
 e2e/             Playwright による E2E テスト
 docs/            📚 学習用ドキュメント
 ```
