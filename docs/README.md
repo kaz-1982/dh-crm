@@ -11,7 +11,7 @@ Django 6.1 + htmx 2 で社内 CRM を作りながら学ぶための資料です�
 | 04 | [実装パターン集](04-patterns.md) | このアプリの20パターンをコード付きで解説 |
 | 05 | [Django 6.1 の新機能](05-django-features.md) | テンプレートパーシャル、querystring、django-htmx |
 | 06 | [ハマりどころ](06-pitfalls.md) | 実際に踏んだバグ 15 件と定番の落とし穴 |
-| 07 | [テスト](07-testing.md) | **単体・結合・E2E の3層。Playwright あり** |
+| 07 | [テスト](07-testing.md) | **単体・結合・E2E の3層。Playwright と CI** |
 | 08 | [練習問題](08-exercises.md) | 手を動かして覚えるための課題 12 問 |
 | 09 | [本番化チェックリスト](09-production.md) | 学習用のままだと困るところ |
 

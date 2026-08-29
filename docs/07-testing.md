@@ -550,30 +550,178 @@ cls.browser = cls._pw.chromium.launch(headless=False, slow_mo=400)
 
 ---
 
-## 8. CI に載せる
+## 8. CI（GitHub Actions）
+
+**`.github/workflows/test.yml` に設定済みです。** push と pull request で走ります。
+
+```mermaid
+flowchart LR
+    P["push /<br/>pull request"] --> F["fast<br/>単体+結合 143件<br/>約7秒"]
+    P --> E["e2e<br/>Playwright 37件<br/>約28秒"]
+    E -.->|失敗時のみ| A["スクリーンショットと<br/>トレースをアップロード"]
+
+    style F fill:#ecfdf5,stroke:#059669
+    style E fill:#fffbeb,stroke:#d97706
+    style A fill:#fdeef1,stroke:#be123c
+```
+
+### ジョブを2つに分けている理由
+
+E2E が落ちたとき、**「アプリが壊れたのか、ブラウザ側の都合なのか」**を
+切り分けやすくするためです。速い層が緑なら、サーバの返す HTML とヘッダは
+正しいと分かるので、原因は JavaScript か環境かに絞れます。
+
+並列に走るので、全体の所要時間も短くなります。
+
+### fast ジョブ
 
 ```yaml
-# .github/workflows/test.yml
-name: test
-on: [push, pull_request]
+      - run: uv sync --frozen
+      - run: uv run python manage.py check
+      - run: uv run python manage.py makemigrations --check --dry-run
+      - run: uv run python manage.py test --exclude-tag=e2e --verbosity=2
+```
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv sync
+- **`uv sync --frozen`** — `uv.lock` を更新せずにその通り入れる。
+  ロックが古いまま CI が緑になる事故を防げます
+- **`makemigrations --check --dry-run`** — モデルを変えたのに
+  マイグレーションを作り忘れていると落ちます。1秒で済むわりに効きます
+
+### e2e ジョブ
+
+```yaml
+      - name: Playwright のブラウザをキャッシュ
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('uv.lock') }}
+
       - run: uv run playwright install --with-deps chromium
-      - run: uv run python manage.py test
+
+      - env:
+          E2E_TIMEOUT: 15000
+        run: uv run python manage.py test e2e --verbosity=2
 ```
 
-E2E が不安定なら、まず速い層だけを必須にして、E2E は別ジョブにするのも手です。
+- **ブラウザをキャッシュする** — Chromium は約 95MB。毎回落とすと遅い。
+  キーに `uv.lock` のハッシュを含めて、playwright を上げたときに
+  古いブラウザを掴まないようにしています
+- **`--with-deps` は毎回必要** — キャッシュされるのはブラウザ本体だけで、
+  OS 側の共有ライブラリは入りません
+- **`E2E_TIMEOUT`** — CI のランナーは手元より遅いので待ち時間を延ばします
+  （`e2e/base.py` が環境変数を読みます）
+
+### 失敗したときの証拠を残す
+
+CI で E2E が落ちても、ログだけでは何が起きたか分かりません。
+**失敗したテストのスクリーンショットと Playwright トレース**を残しています。
 
 ```yaml
-      - run: uv run python manage.py test --exclude-tag=e2e   # 必須
-      - run: uv run python manage.py test e2e                 # 落ちても止めない場合は continue-on-error
+      - name: 失敗時の証拠をアップロード
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failures
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 ```
+
+保存側は `e2e/base.py` です。成功したテストの分は捨てるので、
+成果物が膨らむことはありません。
+
+```python
+def setUp(self):
+    ...
+    self.context.tracing.start(screenshots=True, snapshots=True, sources=True)
+    self._problems_before = self._problem_count()
+
+def tearDown(self):
+    if self._test_failed():
+        self._save_artifacts()      # PNG と trace.zip を test-results/ へ
+    else:
+        self.context.tracing.stop() # 捨てる
+```
+
+ダウンロードしたトレースはこれで開けます。各ステップの DOM とネットワークが
+そのまま辿れるので、原因究明が一気に楽になります。
+
+```bash
+uv run playwright show-trace e2e-failures/InlineEditTests.test_Escキーでも取り消せる.zip
+```
+
+> **「テストが失敗したか」の判定に `self._outcome.success` は使えません。**
+> unittest の `testPartExecutor` が tearDown の実行中だけ True に戻すため、
+> tearDown からは常に成功に見えます。
+> 一方 result への記録はテストメソッドがこけた時点で済んでいるので、
+> **失敗件数の差分**なら正しく判定できます。
+>
+> ```python
+> def _test_failed(self) -> bool:
+>     return self._problem_count() > self._problems_before
+> ```
+
+---
+
+## 8-2. flaky なテストを潰す
+
+CI に入れる直前、E2E が **3回に2回落ちる** 状態でした。
+ランダムに赤くなる CI は誰も見なくなるので、必ず潰してから入れます。
+
+### 原因1: SortableJS が先に DOM を動かす
+
+ドロップした瞬間、SortableJS は**サーバの応答を待たずに**カードを移動します。
+つまり「カードが移動先の列にある」というアサーションは、
+まだ通信中でも通ってしまいます。その直後に次の操作を始めると、
+遅れて届いたレスポンスがボードを差し替えて操作対象が消えます。
+
+```python
+def wait_for_htmx_idle(self):
+    """進行中の htmx リクエストが無くなるまで待つ。
+
+    htmx はリクエスト中の要素に .htmx-request を付ける。
+    htmx.ajax() の場合その要素は <body> なので、これで判定できる。
+    """
+    self.page.wait_for_function(
+        "() => document.querySelectorAll('.htmx-request').length === 0"
+    )
+```
+
+ドラッグの直後にこれを挟んだら安定しました。
+
+### 原因2: フォーカスが移る前にキーを押していた
+
+`Esc` でインライン編集を取り消すハンドラは、
+`event.target` が `[data-inline-form]` の中にあることを条件にしています。
+入力欄が**表示された**だけで押すと、まだ `body` にフォーカスがあって何も起きません。
+
+```python
+# ❌ 表示だけ待つ
+expect(field.locator("input[name=phone]")).to_be_visible()
+self.page.keyboard.press("Escape")
+
+# ✅ フォーカスまで待ち、その要素に対して押す
+expect(edit_input).to_be_focused()
+edit_input.press("Escape")
+```
+
+### flaky を見つける方法
+
+**1回通っただけで安心しないこと。** 連続で回して確かめます。
+
+```bash
+for i in 1 2 3 4 5; do uv run python manage.py test e2e 2>&1 | tail -3; done
+```
+
+> 単体で回すと通るのに全体だと落ちる場合は、テスト間の干渉か
+> マシン負荷によるタイミング変化を疑ってください。
+> この2件はどちらも後者でした（**待ち方が甘かった**）。
+
+### 教訓
+
+flaky の直し方は「待ち時間を伸ばす」ではなく、
+**「何を待つべきかを正確に書く」**です。
+`wait_for_timeout(500)` を撒くと、遅いマシンでまた落ちます。
 
 ---
 

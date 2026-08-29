@@ -1,0 +1,100 @@
+# Django 6.1 + htmx サンプルの CI
+#
+# 速い層（単体+結合）と E2E を別ジョブに分けて並列に回す。
+# 分けているのは、E2E が落ちたときに「アプリが壊れたのか、ブラウザ側の
+# 都合なのか」を切り分けやすくするため。速い層が緑なら、サーバの
+# 返す HTML とヘッダは正しいと分かる。
+
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同じブランチに続けて push したら、古い実行は打ち切る
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------
+  # 単体 + 結合（143件 / 約7秒）。ブラウザ不要なので軽い。
+  # ---------------------------------------------------------------------
+  fast:
+    name: 単体・結合テスト
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: uv をセットアップ
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # .python-version を見て CPython 3.13 を取得し、依存を入れる
+      - name: 依存をインストール
+        run: uv sync --frozen
+
+      - name: 設定チェック
+        run: uv run python manage.py check
+
+      # モデルを変えたのにマイグレーションを作り忘れていないか
+      - name: 未作成のマイグレーションが無いか
+        run: uv run python manage.py makemigrations --check --dry-run
+
+      - name: テスト（E2E を除く）
+        run: uv run python manage.py test --exclude-tag=e2e --verbosity=2
+
+  # ---------------------------------------------------------------------
+  # E2E（37件 / 約28秒 + ブラウザ準備）。実 Chromium を使う。
+  # ---------------------------------------------------------------------
+  e2e:
+    name: E2E テスト (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: uv をセットアップ
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: 依存をインストール
+        run: uv sync --frozen
+
+      # Chromium は約 95MB。毎回落とすと遅いのでキャッシュする。
+      # uv.lock が変わる = playwright のバージョンが変わりうるので、
+      # ハッシュをキーに含めて古いブラウザを掴まないようにする。
+      - name: Playwright のブラウザをキャッシュ
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('uv.lock') }}
+
+      # キャッシュが当たっていればダウンロードは飛ばされる。
+      # --with-deps は OS 側の共有ライブラリを入れるので毎回必要。
+      - name: Chromium をインストール
+        run: uv run playwright install --with-deps chromium
+
+      - name: E2E テスト
+        env:
+          # CI のランナーは手元より遅いので待ち時間を延ばす
+          E2E_TIMEOUT: 15000
+        run: uv run python manage.py test e2e --verbosity=2
+
+      # 落ちたときだけ、失敗したテストのスクリーンショットと
+      # Playwright トレースを残す。トレースは手元にダウンロードして
+      #   uv run playwright show-trace <ファイル>
+      # で開くと、各ステップの DOM とネットワークをそのまま辿れる。
+      - name: 失敗時の証拠をアップロード
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failures
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore

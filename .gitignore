@@ -17,3 +17,6 @@ media/
 
 # macOS
 .DS_Store
+
+# テスト成果物
+test-results/

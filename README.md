@@ -45,6 +45,10 @@ uv run playwright install chromium
 uv run python manage.py test --exclude-tag=e2e
 ```
 
+CI は GitHub Actions で設定済みです（`.github/workflows/test.yml`）。
+push と pull request のたびに、速い層と E2E を並列で回します。
+E2E が落ちたときはスクリーンショットと Playwright トレースが成果物として残ります。
+
 詳しくは **[docs/01-はじめかた](docs/01-getting-started.md)** と **[docs/07-テスト](docs/07-testing.md)**。
 
 ---
@@ -104,6 +108,7 @@ uv run python manage.py test --exclude-tag=e2e
 ## ディレクトリ
 
 ```
+.github/         CI（GitHub Actions）
 config/          プロジェクト設定
 accounts/        カスタムユーザー
 crm/             ★ ドメインと htmx の実装

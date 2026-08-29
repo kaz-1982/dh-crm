@@ -70,6 +70,26 @@ uv run playwright install chromium                # E2E の初回だけ
 - E2E でモーダルを開くときは `open_modal()` を使う。
   要素の存在だけを待つと htmx の処理完了前に操作してしまう
 - E2E で新しいバグを見つけたら、**必ず結合テストに回帰ケースを書き直す**
+- **flaky を放置しない。** 直し方は「待ち時間を伸ばす」ではなく
+  「何を待つべきかを正確に書く」。`wait_for_htmx_idle()` と
+  `expect(...).to_be_focused()` を使う。`wait_for_timeout` を撒かない
+- E2E を触ったら `for i in 1 2 3; do ... done` で連続実行して安定を確認する
+
+### CI
+
+`.github/workflows/test.yml`。push と PR で `fast`（単体+結合）と
+`e2e` を並列に回す。E2E 失敗時は `test-results/` の
+スクリーンショットとトレースが成果物として残る。
+
+CI で回すコマンドを変えたら、手元でも同じコマンドを流して確認すること:
+
+```bash
+uv sync --frozen
+uv run python manage.py check
+uv run python manage.py makemigrations --check --dry-run
+uv run python manage.py test --exclude-tag=e2e
+E2E_TIMEOUT=15000 uv run python manage.py test e2e
+```
 
 ### ドキュメント
 

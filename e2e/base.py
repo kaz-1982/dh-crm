@@ -1,6 +1,7 @@
 """Playwright を Django のテストに載せるための土台。"""
 
 import os
+from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth import BACKEND_SESSION_KEY, HASH_SESSION_KEY, SESSION_KEY
@@ -25,8 +26,12 @@ class PlaywrightTestCase(StaticLiveServerTestCase):
     静的ファイル（htmx 本体を含む）も配信してくれる。
     """
 
-    #: 各操作の待ち時間の上限（ミリ秒）。CI が遅いときはここを伸ばす。
-    TIMEOUT = 5_000
+    #: 各操作の待ち時間の上限（ミリ秒）。CI は遅いので環境変数で伸ばせるようにする。
+    TIMEOUT = int(os.environ.get("E2E_TIMEOUT", 5_000))
+
+    #: 失敗したテストのスクリーンショットとトレースの保存先。
+    #: CI ではここを成果物としてアップロードする。
+    ARTIFACT_DIR = Path(os.environ.get("E2E_ARTIFACTS", "test-results"))
 
     @classmethod
     def setUpClass(cls):
@@ -47,7 +52,14 @@ class PlaywrightTestCase(StaticLiveServerTestCase):
         super().setUp()
         self.context = self.browser.new_context(viewport={"width": 1440, "height": 900})
         self.context.set_default_timeout(self.TIMEOUT)
+
+        # 失敗したときだけ保存する。成功時は捨てるので、常時記録しても無駄にならない。
+        self.context.tracing.start(screenshots=True, snapshots=True, sources=True)
+
         self.page = self.context.new_page()
+
+        # このテストが失敗したかを後で判定するため、開始時点の件数を控えておく
+        self._problems_before = self._problem_count()
 
         # コンソールエラーを集めておく。htmx は失敗を黙って握りつぶしがちなので、
         # 「エラーが出ていないこと」自体をテストの一部にする。
@@ -59,8 +71,46 @@ class PlaywrightTestCase(StaticLiveServerTestCase):
         self.page.on("pageerror", lambda err: self.console_errors.append(str(err)))
 
     def tearDown(self):
+        if self._test_failed():
+            self._save_artifacts()
+        else:
+            self.context.tracing.stop()
         self.context.close()
         super().tearDown()
+
+    # --- 失敗時の証拠を残す ------------------------------------------------
+
+    def _problem_count(self) -> int:
+        result = self._outcome.result
+        return len(result.failures) + len(result.errors)
+
+    def _test_failed(self) -> bool:
+        """このテストが失敗したか。
+
+        `self._outcome.success` は使えない。unittest の testPartExecutor が
+        tearDown の実行中だけ True に戻してしまうため、tearDown からは
+        常に True に見える。一方 result への失敗の記録はテストメソッドが
+        こけた時点で済んでいるので、件数の差分なら正しく判定できる。
+        """
+        return self._problem_count() > self._problems_before
+
+    def _save_artifacts(self):
+        """スクリーンショットと Playwright トレースを残す。
+
+        トレースは `playwright show-trace <file>` で開くと、
+        操作の各ステップの DOM とネットワークをそのまま辿れる。
+        CI で落ちたときの原因究明はこれがあるかどうかで大きく変わる。
+        """
+        self.ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+        name = f"{self.__class__.__name__}.{self._testMethodName}"
+        try:
+            self.page.screenshot(path=str(self.ARTIFACT_DIR / f"{name}.png"), full_page=True)
+        except Exception:  # ページが閉じている等。証拠集めで落としたくない
+            pass
+        try:
+            self.context.tracing.stop(path=str(self.ARTIFACT_DIR / f"{name}.zip"))
+        except Exception:
+            pass
 
     # --- ヘルパー ---------------------------------------------------------
 
@@ -85,6 +135,23 @@ class PlaywrightTestCase(StaticLiveServerTestCase):
         self.page.goto(f"{self.live_server_url}{path}")
         # htmx が読み込まれ、DOM の処理が終わるまで待つ
         self.page.wait_for_function("() => window.htmx !== undefined")
+
+    def wait_for_htmx_idle(self):
+        """進行中の htmx リクエストが無くなるまで待つ。
+
+        必要になる理由:
+        SortableJS はドロップした瞬間に自分で DOM を動かす。つまり
+        「カードが移動先の列にある」というアサーションは、サーバの応答を
+        待たずに通ってしまう。その直後に次の操作を始めると、遅れて届いた
+        レスポンスがボードを差し替えて操作対象が消え、たまに落ちる
+        （＝ flaky なテストになる）。
+
+        htmx はリクエスト中の要素に .htmx-request を付ける。
+        htmx.ajax() の場合その要素は <body> なので、これで判定できる。
+        """
+        self.page.wait_for_function(
+            "() => document.querySelectorAll('.htmx-request').length === 0"
+        )
 
     def assert_no_console_errors(self):
         """htmx のセレクタ間違いなどはコンソールにしか出ない。"""

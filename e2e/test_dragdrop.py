@@ -67,6 +67,9 @@ class KanbanDragTests(PlaywrightTestCase):
             )
             self.page.wait_for_timeout(30)
         self.page.mouse.up()
+        # サーバがボードを返し終えるまで待つ。これを省くと、
+        # 遅れて届いた差し替えが次の操作を壊して flaky になる。
+        self.wait_for_htmx_idle()
 
     # --- テスト ----------------------------------------------------------
 

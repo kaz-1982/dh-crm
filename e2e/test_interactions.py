@@ -228,9 +228,13 @@ class InlineEditTests(BaseFlowTest):
         self.goto(f"/companies/{self.company.pk}/")
         field = self.page.locator("#field-phone")
         field.click()
-        expect(field.locator("input[name=phone]")).to_be_visible()
+        edit_input = field.locator("input[name=phone]")
+        # autofocus が当たるまで待つ。Esc のハンドラは event.target が
+        # [data-inline-form] の中にあることを条件にしているため、
+        # フォーカスが移る前に押しても何も起きない（flaky の原因だった）。
+        expect(edit_input).to_be_focused()
 
-        self.page.keyboard.press("Escape")
+        edit_input.press("Escape")
         expect(self.page.locator("#field-phone input")).to_have_count(0)
         expect(self.page.locator("#field-phone")).to_contain_text("03-1111-1111")
 
@@ -240,9 +244,12 @@ class InlineEditTests(BaseFlowTest):
         for value in ["11-1111-1111", "22-2222-2222", "33-3333-3333"]:
             field = self.page.locator("#field-phone")
             field.click()
-            field.locator("input[name=phone]").fill(value)
+            edit_input = field.locator("input[name=phone]")
+            expect(edit_input).to_be_focused()
+            edit_input.fill(value)
             field.locator("button[type=submit]").click()
             expect(self.page.locator("#field-phone")).to_contain_text(value)
+            self.wait_for_htmx_idle()
 
 
 class DeleteTests(BaseFlowTest):
